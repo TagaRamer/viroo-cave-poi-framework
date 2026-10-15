@@ -1,80 +1,57 @@
-# VIROO CAVE point-of-interest and scenario framework
+# VIROO CAVE: networked points of interest and a clinical scenario
 
-![Patient bay with status chips, live monitor, and a hover prompt on the patient's face](docs/images/room-overview.png)
+C# code for a hospital training scenario that runs in a four-wall CAVE (an immersive projection room) on Virtualware's VIROO platform. I built it at the Medical Physics & Digital Innovation Lab of Aristotle University of Thessaloniki.
 
-This is the code behind a training simulation I built for a 4-screen CAVE room running on
-VIROO (Virtualware's XR platform). The scenario is methaemoglobinaemia: a patient whose oxygen
-saturation sits stubbornly at 85% no matter what you do with the oxygen supply, and the only way
-out is spotting the real cause and giving the right antidote.
+[![Short clip of the scenario running in the CAVE](https://i.ytimg.com/vi/FzQWA8A3l2s/hqdefault.jpg)](https://youtube.com/shorts/FzQWA8A3l2s)
 
-Every wall of the CAVE runs its own VIROO Player, all joined to the same session, and whichever
-one connects first becomes the leader. A trainee walks up to the patient and clicks small glowing
-markers scattered around the room: the face, the hands, the chest, the monitor, the oxygen flow
-meter, the IV line. Click one on any screen and the same popup opens on all four at once, the
-marker hides itself so it can't be double-clicked, and when you close it, it reappears. That part
-of the repo (`src/Networking/`) doesn't know anything about hospitals. It's a generic "shared
-point of interest, synced across every connected client" system I'd reuse for a different scenario
-without touching it.
+Short clip: https://youtube.com/shorts/FzQWA8A3l2s
 
-The hospital scenario itself (`src/Scenario/`) is built entirely on top of that generic layer.
+![Patient bay with status chips, a live monitor, and a hover prompt on the patient's face](docs/images/room-overview.png)
 
-## What's actually interactive
+## The scenario
 
-![Popup open on the patient's face, showing the bilingual clinical finding and the live monitor behind it reading SpO2 85 in red](docs/images/popup-observation.png)
+A 32-year-old woman sits on a hospital bed with blue lips. She is calm and breathing easily, but her oxygen saturation sits around 85% and does not go up, whatever oxygen the trainees give her. The cause is methaemoglobinaemia from a drug she had during an exam earlier that day.
 
-Some points are pure observation, like the one above: click the patient's face and you get the
-clinical finding in Greek and English (lips show cyanosis, rest of the skin is fine). Point C
-(auscultation) is the negative finding that's supposed to throw you off: clear breath sounds,
-which rules out a lung cause and makes the low saturation genuinely confusing.
+Trainees walk around her in the CAVE and click small markers on her face, hands and chest, the monitor, the oxygen flow meter, the IV line and the crash cart. Each marker opens an info popup or an action menu, like the one below on her face, showing the clinical finding in Greek and English with the monitor's SpO2 reading red behind it.
 
-Other points are actions with consequences:
+![Popup open on the patient's face, with the live monitor behind it reading SpO2 85 in red](docs/images/popup-observation.png)
+
+They can change the oxygen device and flow, take a blood gas (the blood comes out brown) and give drugs through the IV line's menu, shown here with its five options:
 
 ![Drug selection menu open at the IV line, five options laid out as ray-selectable buttons](docs/images/popup-drug-menu.png)
 
-The oxygen point lets a trainee swap between nasal cannula, simple mask, and non-rebreather, and
-turn the flow up or down. None of it moves the saturation, which is the whole point of the case.
-The IV line opens the menu above: five drugs pulled from the crash cart, each giveable once.
-Four of them do nothing (picking wrong never hurts the patient), and the fifth, methylene blue, is
-the actual antidote. Give it and the patient starts recovering. There's also an arterial blood
-draw that takes a few seconds to process, then shows chocolate-brown blood and a blood gas report
-with a raised methaemoglobin level on the co-oximetry panel, which is the moment most trainees go
-"oh".
+Four of those drugs do nothing; picking wrong never hurts the patient. The fifth, methylene blue, is the actual antidote. If nobody treats her, she gets worse on a timer: stable, worsening, severe, cardiac arrest. Give methylene blue in time and she recovers instead.
 
-Behind all of it sits `ScenarioState`, one networked state machine every screen reads from. It
-tracks the oxygen setting, the blood gas stage, which drugs have been given, and the patient's
-clinical course (stable, worsening, severe, arrest, recovering, recovered), and it's the only
-thing that writes any of those numbers. The monitor, the status chips, the popups: all of them are
-just rendering whatever `ScenarioState` says, so four screens never disagree about what the
-patient looks like. Left untreated, the patient deteriorates on a timer; give methylene blue in
-time and they recover on a slower one, with the vitals gliding rather than snapping between
-stages.
+Every wall runs its own VIROO player, all joined to the same session, and they all show the same thing: the same popup, the same hidden marker, the same numbers on the monitor.
 
-The bedside monitor in the screenshots is a real-time render, not a texture: it draws ECG, pleth,
-and respiration traces sweep-style, like an actual monitor, and flashes an alarm banner when SpO2
-drops below threshold. In arrest the traces go flat and it reads ASYSTOLE instead.
+The clinical scenario (room layout, interaction points and the case itself) was designed together with a student I supervise. I wrote the framework and the code in this repo.
 
-## Why there's no scene in here
+## How it is built
 
-The Unity project this came from also pulls in a hospital room asset pack, a sci-fi UI kit, and a
-modular environment kit, all under commercial licenses that don't let me redistribute them. I'd
-rather publish just the parts I actually wrote than ship a scene full of missing references, so
-this repo is `src/` and `docs/` only. The screenshots above are from the real thing running.
+The full write-up is in [`docs/Interactions-And-Networking.md`](docs/Interactions-And-Networking.md). It covers how VIROO picks a leader among the screens, how `NetworkVariable<T>` works, and the recipe for adding a new networked interactable.
 
-## Layout
+`src/Networking/` has the reusable parts, which know nothing about this scenario:
+- `InteractionPoint` and `InteractionPointManager`: the point-of-interest system. One shared `NetworkVariable<string>` holds which point is open. A click writes to it, and every screen's popup reacts to the change. A point hides itself while its popup is open, through `NetworkedVisibilityToggle` rather than `SetActive`, so it stays subscribed to network updates.
+- `PointOfInterestPopupUI`: shows whichever point is open, with its text and any action buttons that an `IPointActionProvider` supplies.
+- `NetworkedVisibilityToggle`: synced show and hide for any object.
+- `NetworkedAnimatorSync`: keeps a looping animation, like the patient's breathing, in step on every screen.
 
-- `src/Networking/` - the generic point-of-interest system: `InteractionPoint`,
-  `InteractionPointManager`, `PointOfInterestPopupUI`, plus `NetworkedVisibilityToggle` and
-  `NetworkedAnimatorSync` for synced show/hide and synced looping animation.
-- `src/Interactions/` - selection plumbing, including the fix for VIROO's desktop mode not
-  routing mouse clicks through `EventSystem` to world-space UI.
-- `src/Scenario/` - the methaemoglobinaemia case: `ScenarioState`, the interactive points
-  (`OxygenActions`, `IvDrugActions`, `BloodGasActions`, `InstructorActions`), and the runtime
-  displays (`PatientMonitorDisplay`, `ScenarioOutcomeBanner`).
-- `docs/Interactions-And-Networking.md` - the architecture notes I wrote while building this:
-  how VIROO's leader election and `NetworkVariable<T>` work, and the recipe I followed for every
-  new networked interactable.
+`src/Interactions/` has small adapters and the XR selection plumbing. In VIROO's desktop mode, mouse clicks don't reach world-space UI through the `EventSystem`, so `PopupCloseOnSelect` and `PopupActionButton` are selected the same way as every other point, through a collider and an `XRSimpleInteractable`.
 
-## Stack
+`src/Scenario/` is the methaemoglobinaemia case, built only on the layer above:
+- `ScenarioState` holds everything the scenario knows (oxygen device and flow, blood gas stage, drugs given, clinical course), all of it networked.
+- `OxygenActions`, `IvDrugActions`, `BloodGasActions` and `InstructorActions` are the interactive points, each an `IPointActionProvider`.
+- `PatientMonitorDisplay` draws the ECG, pleth and respiration traces at runtime from the shared state, and `ScenarioOutcomeBanner` shows the result when the patient recovers or arrests.
+- An instructor point inside the room lets someone restart, pause or skip stages with just a tracked wand.
 
-Unity 6000.0 (URP), XR Interaction Toolkit + OpenXR, VIROO/Virtualware's networking SDK, DTrack
-for the CAVE wands.
+## Tech
+
+Unity 6000.0 (URP), XR Interaction Toolkit and OpenXR, the VIROO / Virtualware networking SDK, ART DTrack for the CAVE wands.
+
+## What is not here
+
+The working project also uses commercial art and UI packs (hospital room dressing, a modular environment kit and a sci-fi UI kit) whose licences don't allow redistribution. So this repo has the code and the docs only, not the Unity scene. The screenshots above are from the real thing running. You also need a VIROO licence to run it.
+
+## Licence
+
+The code in this repo is MIT licensed (see `LICENSE`). The VIROO SDK and the art packs are not included and keep their own licences.

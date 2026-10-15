@@ -8,11 +8,11 @@ disappears on click).
 ## Mental model: one session, many screens, one leader
 
 Every CAVE wall runs its own instance of the VIROO Player, and every instance connects to the
-same VIROO session as its own client. There is no separate "server" project to build — the
+same VIROO session as its own client. There is no separate "server" project to build: the
 first client to connect a given session automatically becomes the **leader**
 (`Virtualware.Networking.TaskRunner.Conditional.ConditionalRunner.IsLeader`, exposed as
 `VirooApi.Instance.Networking().ConditionalRunner`). This is what the CAVE setup calls the
-"main user" — it's automatic, not something you configure per screen.
+"main user". It's automatic, not something you configure per screen.
 
 Two networked primitives cover almost everything:
 
